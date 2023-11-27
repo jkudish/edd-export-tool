@@ -11,8 +11,9 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 * [--output-format=<format>]
 		 * : Output format (csv or json).
 		 * ---
-		 * default: csv
+		 * default: table
 		 * options:
+		 *   - table
 		 *   - csv
 		 *   - json
 		 * ---
@@ -22,7 +23,65 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 */
 		public function payments( $args, $assoc_args ) {
 			$this->version_check();
+			$payments_data = $this->get_payments_data();
+			if (empty($payments_data)) {
+				return WP_CLI::error( __( 'No EDD payments found.', 'edd-export-tool' ) );
+			}
 
+			return WP_CLI\Utils\format_items( $assoc_args['output-format'], $payments_data, array_keys( $payments_data[0] ) );
+		}
+
+		/**
+		 * Get the payments data.
+		 *
+		 * @return array $data The data for the export
+		 * @since 1.0
+		 *
+		 */
+		private function get_payments_data() {
+			$data = array();
+
+			$args = array(
+				'order'   => 'ASC',
+				'orderby' => 'date_created',
+				'type'    => 'sale',
+			);
+
+			$orders = edd_get_orders( $args );
+
+			foreach ( $orders as $order ) {
+				/** @var EDD\Orders\Order $order */
+				$data[] = $this->get_payment_data( $order );
+			}
+
+			$data = apply_filters( 'edd_export_tool_get_payments_data', $data );
+			return $data;
+		}
+
+		/**
+		 * Get the data for an individual payment
+		 *
+		 * @param EDD\Orders\Order $order The order object
+		 *
+		 * @return array $data The data for an individual payment
+		 * @since 1.0
+		 *
+		 */
+		private function get_payment_data( $order ) {
+			$payment_data = array(
+				'Customer ID'     => $order->customer_id,
+				'Customer Email'  => $order->email,
+				'Order ID'        => $order->id,
+				'Sequence ID'     => $order->get_number(),
+				'Transaction ID'  => $order->get_transaction_id(),
+				'Payment Date'    => $order->date_created,
+				'Payment Status'  => $order->status,
+				'Payment Amount'  => html_entity_decode( edd_format_amount( $order->total ) ),
+				'Payment Gateway' => edd_get_gateway_admin_label( $order->gateway ),
+			);
+
+			$payment_data = apply_filters( 'edd_export_tool_get_payment_data', $payment_data );
+			return $payment_data;
 		}
 
 		/**
