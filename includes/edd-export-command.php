@@ -16,6 +16,8 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 *   - table
 		 *   - csv
 		 *   - json
+		 *   - csv-file
+		 *   - json-file
 		 * ---
 		 *
 		 * [--destination=<destination>]
@@ -38,12 +40,18 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 
 			switch ( $args['output-format'] ) {
 				case 'csv':
-					$file_path = $this->write_csv( $payments_data, $args['destination'] );
+					return WP_CLI\Utils\format_items( 'csv', $payments_data, array_keys( $payments_data[0] ) );
+
+				case 'json':
+					return WP_CLI\Utils\format_items( 'json', $payments_data, array_keys( $payments_data[0] ) );
+
+				case 'csv-file':
+					$file_path = $this->write_csv_file( $payments_data, $args['destination'] );
 
 					return WP_CLI::success( sprintf( '%s %s', __( 'Payments exported to CSV file:', 'edd-export-tool' ), $file_path ) );
 
-				case 'json':
-					$file_path = $this->write_json( $payments_data, $args['destination'] );
+				case 'json-file':
+					$file_path = $this->write_json_file( $payments_data, $args['destination'] );
 
 					return WP_CLI::success( sprintf( '%s %s', __( 'Payments exported to JSON file:', 'edd-export-tool' ), $file_path ) );
 
@@ -117,7 +125,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 * @return mixed WP_CLI::error if the file could not be opened for writing, otherwise the path to the CSV file
 		 * @since 1.0
 		 */
-		private function write_csv( $data, $destination ) {
+		private function write_csv_file( $data, $destination ) {
 			$file_path = trailingslashit( $destination ) . 'edd-payments-' . date( 'Y-m-d' ) . '.csv';
 			$file      = $this->get_file( $file_path );
 			if ( ! $file ) {
@@ -125,6 +133,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			}
 
 			WP_CLI\Utils\write_csv( $file, $data, array_keys( $data[0] ) );
+
 			return $file_path;
 		}
 
@@ -137,7 +146,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 * @return mixed WP_CLI::error if the file could not be opened for writing, otherwise the path to the JSON file
 		 * @since 1.0
 		 */
-		private function write_json( $data, $destination ) {
+		private function write_json_file( $data, $destination ) {
 			$file_path = trailingslashit( $destination ) . 'edd-payments-' . date( 'Y-m-d' ) . '.json';
 			$file      = $this->get_file( $file_path );
 			if ( ! $file ) {
@@ -146,6 +155,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 
 			$json = json_encode( $data, JSON_PRETTY_PRINT );
 			file_put_contents( $file_path, $json );
+
 			return $file_path;
 		}
 

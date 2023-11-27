@@ -4,7 +4,7 @@ Tags: edd, easy-digital-downloads, export, tool, wp-cli, reports
 Requires at least: 4.5
 Tested up to: 6.4.1
 Requires PHP: 5.6
-Stable tag: 0.1.0
+Stable tag: 1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -26,7 +26,10 @@ Use the `wp edd-export` command to export payment data via the WP-CLI interface
 == Screenshots ==
 
 1. Default output to WP-CLI table format
-2. Output to CSV file
+2. Output to CSV to the shell
+3. Output to JSON to the shell
+4. Output to CSV file
+5. Output to JSON file
 
 == Changelog ==
 
