@@ -1,0 +1,39 @@
+# Copyright (C) 2023 Joey Kudish
+# This file is distributed under the same license as the Edd Export Tool plugin.
+msgid ""
+msgstr ""
+"Project-Id-Version: Edd Export Tool 1.0\n"
+"Report-Msgid-Bugs-To: https://wordpress.org/support/plugin/edd-export-tool\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"POT-Creation-Date: 2023-11-27T01:14:37+00:00\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"X-Generator: WP-CLI 2.9.0\n"
+"X-Domain: edd-export-tool\n"
+
+#. Plugin Name of the plugin
+msgid "Edd Export Tool"
+msgstr ""
+
+#. Plugin URI of the plugin
+msgid "https://github.com/jkudish/edd-export-tool"
+msgstr ""
+
+#. Description of the plugin
+msgid "WP-CLI command that facilitates the extraction of payment data from Easy Digital Downloads (EDD) platform. The command provides the capability to export payment data from a specified time frame, enabling users to generate outputs in either CSV or JSON formats, and can output its data directly or to a specified file location. The tool offers customization options for selecting the data fields to be included in the output, along with various filtering mechanisms based on payment criteria."
+msgstr ""
+
+#. Author of the plugin
+msgid "Joey Kudish"
+msgstr ""
+
+#. Author URI of the plugin
+msgid "https://github.com/jkudish"
+msgstr ""
+
+#: includes/edd-export-command.php:34
+msgid "Easy Digital Downloads 2.9.14 or greater is required to run this export tool. Please make sure EDD 2.9.14 is installed and activated."
+msgstr ""

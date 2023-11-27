@@ -1,0 +1,26 @@
+{
+  "name": "jkudish/edd-export-tool",
+  "type": "wordpress-plugin",
+  "license": "GPL-2.0-or-later",
+  "description": "A tool to export Easy Digital Downloads purchase data to CSV or JSON",
+  "keywords": [
+    "easy digital downloads",
+    "edd",
+    "csv",
+    "export"
+  ],
+  "authors": [
+    {
+      "name": "Joey Kudish"
+    }
+  ],
+  "require": {
+    "easydigitaldownloads/edd-addon-tools": "*"
+  },
+  "repositories": [
+    {
+      "type": "vcs",
+      "url": "https://github.com/awesomemotive/edd-addon-tools"
+    }
+  ]
+}
