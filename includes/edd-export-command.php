@@ -4,6 +4,22 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 	class EDD_Export_Command extends WP_CLI_Command {
 
 		/**
+		 * Start date as a \EDD\Utils\Date (Carbon) object, or null
+		 *
+		 * @since 1.0
+		 * @var \EDD\Utils\Date|null
+		 */
+		private $start;
+
+		/**
+		 * End date as a \EDD\Utils\Date (Carbon) object, or null
+		 *
+		 * @since 1.0
+		 * @var \EDD\Utils\Date|null
+		 */
+		private $end;
+
+		/**
 		 * Export EDD payment data.
 		 *
 		 * ## OPTIONS
@@ -26,6 +42,15 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 * [--fields=<fields>]
 		 * : Array of fields to include in the export. Defaults to: customer_id, customer_email, payment_id, sequence_id, transaction_id, payment_date, payment_status, payment_amount, payment_gateway. Optional fields that you can include: customer_name, customer_phone, payment_notes, address1, address2, city, region, country, postal_code, phone
 		 *
+		 * [--days=<days>]
+		 * : Export data for the last X days. Defaults to 30. Superseded by start/end dates.
+		 *
+		 * [--start=<date>]
+		 * : Export data after specified date/time. Defaults to 30 days ago. Supersedes days argument.
+		 *
+		 * [--end=<date>]
+		 * : Export data before specified date/time. Defaults to now. Supersedes days argument.
+		 *
 		 *  ## EXAMPLES
 		 *
 		 *      # Export default fields to a CLI table
@@ -34,11 +59,11 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 *      # Customize fields to include in the export
 		 *      $ wp edd-export payments '--fields=["customer_id","customer_email","payment_id","customer_name","payment_notes"]'
 		 *
-		 *      # Export to CSV in the shell
-		 *      $ wp edd-export payments --output-format=csv
+		 *      # Export to CSV in the shell and override number of days
+		 *      $ wp edd-export payments --output-format=csv --days=45
 		 *
-		 *      # Export to CSV file
-		 *      $ wp edd-export payments --output-format=csv-file
+		 *      # Export to CSV file and override date range
+		 *      $ wp edd-export payments --output-format=csv-file --start="2023-11-01" --end="2023-11-27 17:00:00"
 		 *
 		 *      # Export to JSON file and specify custom destination
 		 *      $ wp edd-export payments --output-format=json-file --destination=/path/to/destination
@@ -53,6 +78,9 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			$args       = wp_parse_args( $assoc_args, array(
 				'output-format' => 'table',
 				'destination'   => wp_upload_dir()['basedir'] . '/edd-exports',
+				'days'          => 30,
+				'start'         => null,
+				'end'           => null,
 				'fields'        => array(
 					'customer_id',
 					'customer_email',
@@ -66,9 +94,9 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				),
 			) );
 
-			$payments_data = $this->get_payments_data( $args['fields'], $args['output-format'] );
+			$payments_data = $this->get_payments_data( $args );
 			if ( empty( $payments_data ) ) {
-				return WP_CLI::error( __( 'No EDD payments found.', 'edd-export-tool' ) );
+				return WP_CLI::warning( __( 'No EDD payments found for specified arguments.', 'edd-export-tool' ) );
 			}
 
 			switch ( $args['output-format'] ) {
@@ -97,32 +125,68 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		/**
 		 * Get the payments data.
 		 *
-		 * @param array $fields The fields to include in the export
-		 * @param string $output_format The output format
+		 * @param array $args The arguments passed to the command
 		 *
 		 * @return array $data The data for the export
 		 * @since 1.0
 		 *
 		 */
-		private function get_payments_data( $fields, $output_format ) {
+		private function get_payments_data( array $args ) {
 			$data = array();
 
-			$args = array(
+			$query = array(
 				'order'   => 'ASC',
 				'orderby' => 'date_created',
 				'type'    => 'sale',
 			);
 
-			$orders = edd_get_orders( $args );
+			$query['date_query'] = $this->get_date_query( $args['days'], $args['start'], $args['end'] );
+
+			$orders = edd_get_orders( $query );
 
 			foreach ( $orders as $order ) {
 				/** @var EDD\Orders\Order $order */
-				$data[] = $this->get_payment_data( $order, $fields, $output_format );
+				$data[] = $this->get_payment_data( $order, $args['fields'], $args['output-format'] );
 			}
 
 			$data = apply_filters( 'edd_export_tool_get_payments_data', $data );
 
 			return $data;
+		}
+
+		/**
+		 * Gets the date query.
+		 *
+		 * @param int $days The number of days to include in the export. Superseded by start/end.
+		 * @param string $start The start date for the export. Supersedes days.
+		 * @param string $end The end date for the export. Supersedes days
+		 *
+		 * @return array
+		 * @since 1.0
+		 */
+		protected function get_date_query( $days = 30, $start = null, $end = null ) {
+			$this->start = isset( $start ) ? \EDD\Utils\Date::parse( $start ) : \EDD\Utils\Date::now()->subDays( $days );
+			$this->end   = isset( $end ) ? \EDD\Utils\Date::parse( $end ) : \EDD\Utils\Date::now();
+
+			if ($this->end->isBefore($this->start)) {
+				return WP_CLI::error( __( 'Start date must be before end date.', 'edd-export-tool' ) );
+			}
+
+			$date_query = array(
+				'after'     => '',
+				'before'    => '',
+				'inclusive' => true,
+			);
+
+			if ( ! empty( $this->start ) && $this->start instanceof \EDD\Utils\Date ) {
+				$date_query['after'] = edd_get_utc_date_string( $this->start->toDateTimeString() );
+			}
+
+			if ( ! empty( $this->end ) && $this->end instanceof \EDD\Utils\Date ) {
+				$date_query['before'] = edd_get_utc_date_string( $this->end->toDateTimeString() );
+			}
+
+			return array( $date_query );
 		}
 
 		/**
@@ -247,7 +311,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 * @since 1.0
 		 */
 		private function write_csv_file( $data, $destination ) {
-			$file_path = trailingslashit( $destination ) . 'edd-payments-' . date( 'Y-m-d' ) . '.csv';
+			$file_path = $this->determine_file_path( $destination, 'csv' );
 			$file      = $this->get_file( $file_path );
 			if ( ! $file ) {
 				return WP_CLI::error( sprintf( '%s %s', __( 'Could not open csv file for writing:', 'edd-export-tool' ), $file_path ) );
@@ -268,7 +332,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 * @since 1.0
 		 */
 		private function write_json_file( $data, $destination ) {
-			$file_path = trailingslashit( $destination ) . 'edd-payments-' . date( 'Y-m-d' ) . '.json';
+			$file_path = $this->determine_file_path( $destination, 'json' );
 			$file      = $this->get_file( $file_path );
 			if ( ! $file ) {
 				return WP_CLI::error( sprintf( '%s %s', __( 'Could not open json file for writing:', 'edd-export-tool' ), $file_path ) );
@@ -278,6 +342,19 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			file_put_contents( $file_path, $json );
 
 			return $file_path;
+		}
+
+		/**
+		 * Determine the file path for the export file
+		 *
+		 * @param string $destination The path to the destination directory for the resulting file
+		 * @param string $type The type of file to export (csv or json)
+		 *
+		 * @return string $file_path The path to the export file
+		 * @since 1.0
+		 */
+		private function determine_file_path( $destination, $type = 'csv' ) {
+			return trailingslashit( $destination ) . 'edd-payments-from-' . $this->start->toDateString() . '-to-' . $this->end->toDateString() . '.' . $type;
 		}
 
 		/**
