@@ -20,12 +20,20 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		private $end;
 
 		/**
+		 * The path to the export file
+		 *
+		 * @since 1.0
+		 * @var string
+		 */
+		private $file_path;
+
+		/**
 		 * Export EDD payment data.
 		 *
 		 * ## OPTIONS
 		 *
 		 * [--output-format=<format>]
-		 * : Output format (csv or json).
+		 * : Output format (WP CLI table, csv or json).
 		 * ---
 		 * default: table
 		 * options:
@@ -35,6 +43,12 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 *   - csv-file
 		 *   - json-file
 		 * ---
+		 *
+		 * [--per_page=<number>]
+		 * : Number of orders to retrieve per page/query. Defaults to 1000. Use this to control the number of orders retrieved per page/query. This is useful for large number of orders where memory limits are exceeded. If you are running into memory limits, try reducing this number.
+		 *
+		 * [--max=<number>]
+		 * : Max number of orders to retrieve. Use this to control the total number of orders exported. This has a default value of 100 when using the shell output formats. Otherwise, no default value is applied
 		 *
 		 * [--destination=<destination>]
 		 * : Path to the destination directory for the resulting CSV or JSON file. Defaults to the wp-uploads/edd-exports folder.
@@ -81,6 +95,12 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				'days'          => 30,
 				'start'         => null,
 				'end'           => null,
+				'per_page'      => 1000,
+				'max'           => in_array( $assoc_args['output-format'], array(
+					'table',
+					'csv',
+					'json'
+				) ) ? 100 : null,
 				'fields'        => array(
 					'customer_id',
 					'customer_email',
@@ -94,11 +114,58 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				),
 			) );
 
-			$payments_data = $this->get_payments_data( $args );
-			if ( empty( $payments_data ) ) {
+			$writing_to_file = in_array( $args['output-format'], array(
+				'csv-file',
+				'json-file',
+			) );
+
+			$query = $this->determine_payment_query( $args );
+			$count = edd_count_orders( $query );
+			if ( empty( $count ) ) {
 				return WP_CLI::warning( __( 'No EDD payments found for specified arguments.', 'edd-export-tool' ) );
 			}
 
+			$max   = isset( $args['max'] ) ? $args['max'] : $count;
+			$pages = ceil( $max / $args['per_page'] );
+
+			if ( $count > $max ) {
+				WP_CLI::warning( sprintf( __( 'Exporting %d of %d payments.', 'edd-export-tool' ), $max, $count ) );
+			}
+
+			if ( $args['per_page'] > $max ) {
+				$query['number'] = $max;
+			}
+
+			if ( $writing_to_file ) {
+				$progress = WP_CLI\Utils\make_progress_bar( __( 'Exporting payments', 'edd-export-tool' ), $max, 10 );
+			}
+
+			foreach ( range( 1, $pages ) as $page ) {
+				$query['offset'] = ( $page * $args['per_page'] ) - $args['per_page'];
+				$page            = $this->export_payment_page( $page, $args, $query );
+				if ( ! empty( $progress ) ) {
+					$progress->tick( $args['per_page'] );
+				}
+			}
+
+			if ( $writing_to_file ) {
+				return WP_CLI::success( sprintf( '%s %s', __( 'Payments exported to file:', 'edd-export-tool' ), $this->file_path ) );
+			}
+		}
+
+		/**
+		 * Export a single page of payments
+		 *
+		 * @param int $page The page number
+		 * @param array $args The arguments passed to the command
+		 * @param array $query The query to run
+		 *
+		 * @return array $payments_data The data for the export
+		 * @since 1.0
+		 *
+		 */
+		private function export_payment_page( $page, array $args, array $query ) {
+			$payments_data = $this->get_payments_data( $query, $args );
 			switch ( $args['output-format'] ) {
 				case 'csv':
 					return WP_CLI\Utils\format_items( 'csv', $payments_data, array_keys( $payments_data[0] ) );
@@ -107,14 +174,12 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 					return WP_CLI\Utils\format_items( 'json', $payments_data, array_keys( $payments_data[0] ) );
 
 				case 'csv-file':
-					$file_path = $this->write_csv_file( $payments_data, $args['destination'] );
-
-					return WP_CLI::success( sprintf( '%s %s', __( 'Payments exported to CSV file:', 'edd-export-tool' ), $file_path ) );
+					$this->write_to_csv_file( $page, $payments_data, $args['destination'] );
+					break;
 
 				case 'json-file':
-					$file_path = $this->write_json_file( $payments_data, $args['destination'] );
-
-					return WP_CLI::success( sprintf( '%s %s', __( 'Payments exported to JSON file:', 'edd-export-tool' ), $file_path ) );
+					$this->write_to_json_file( $page, $payments_data, $args['destination'] );
+					break;
 
 				case 'table':
 				default:
@@ -125,23 +190,15 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		/**
 		 * Get the payments data.
 		 *
+		 * @param array $query The query to run
 		 * @param array $args The arguments passed to the command
 		 *
 		 * @return array $data The data for the export
 		 * @since 1.0
 		 *
 		 */
-		private function get_payments_data( array $args ) {
-			$data = array();
-
-			$query = array(
-				'order'   => 'ASC',
-				'orderby' => 'date_created',
-				'type'    => 'sale',
-			);
-
-			$query['date_query'] = $this->get_date_query( $args['days'], $args['start'], $args['end'] );
-
+		private function get_payments_data( array $query, array $args ) {
+			$data   = array();
 			$orders = edd_get_orders( $query );
 
 			foreach ( $orders as $order ) {
@@ -152,6 +209,28 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			$data = apply_filters( 'edd_export_tool_get_payments_data', $data );
 
 			return $data;
+		}
+
+		/**
+		 * Get the payments query.
+		 *
+		 * @param array $args The arguments passed to the command
+		 *
+		 * @return array $query The query for the specified arguments
+		 * @since 1.0
+		 *
+		 */
+		private function determine_payment_query( array $args ) {
+			$query = array(
+				'order'   => 'ASC',
+				'orderby' => 'date_created',
+				'type'    => 'sale',
+				'number'  => $args['per_page'],
+			);
+
+			$query['date_query'] = $this->get_date_query( $args['days'], $args['start'], $args['end'] );
+
+			return $query;
 		}
 
 		/**
@@ -168,7 +247,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			$this->start = isset( $start ) ? \EDD\Utils\Date::parse( $start ) : \EDD\Utils\Date::now()->subDays( $days );
 			$this->end   = isset( $end ) ? \EDD\Utils\Date::parse( $end ) : \EDD\Utils\Date::now();
 
-			if ($this->end->isBefore($this->start)) {
+			if ( $this->end->isBefore( $this->start ) ) {
 				return WP_CLI::error( __( 'Start date must be before end date.', 'edd-export-tool' ) );
 			}
 
@@ -304,20 +383,29 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		/**
 		 * Write the CSV file
 		 *
+		 * @param int $page The page number
 		 * @param array $data The data to write to the CSV file
 		 * @param string $destination The path to the destination directory for the resulting CSV file
 		 *
 		 * @return mixed WP_CLI::error if the file could not be opened for writing, otherwise the path to the CSV file
 		 * @since 1.0
 		 */
-		private function write_csv_file( $data, $destination ) {
+		private function write_to_csv_file( $page, $data, $destination ) {
 			$file_path = $this->determine_file_path( $destination, 'csv' );
-			$file      = $this->get_file( $file_path );
+			$file      = $this->get_file( $file_path, $page );
 			if ( ! $file ) {
 				return WP_CLI::error( sprintf( '%s %s', __( 'Could not open csv file for writing:', 'edd-export-tool' ), $file_path ) );
 			}
 
-			WP_CLI\Utils\write_csv( $file, $data, array_keys( $data[0] ) );
+			if ( $page < 2 ) {
+				WP_CLI\Utils\write_csv( $file, $data, array_keys( $data[0] ) );
+			} else {
+				WP_CLI\Utils\write_csv( $file, $data );
+			}
+
+			// memory cleanup
+			unset($data);
+			fclose($file);
 
 			return $file_path;
 		}
@@ -325,21 +413,33 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		/**
 		 * Write the JSON file
 		 *
+		 * @param int $page The page number
 		 * @param array $data The data to write to the CSV file
 		 * @param string $destination The path to the destination directory for the resulting CSV file
 		 *
 		 * @return mixed WP_CLI::error if the file could not be opened for writing, otherwise the path to the JSON file
 		 * @since 1.0
 		 */
-		private function write_json_file( $data, $destination ) {
+		private function write_to_json_file( $page, $data, $destination ) {
 			$file_path = $this->determine_file_path( $destination, 'json' );
-			$file      = $this->get_file( $file_path );
+			$file      = $this->get_file( $file_path, $page );
 			if ( ! $file ) {
 				return WP_CLI::error( sprintf( '%s %s', __( 'Could not open json file for writing:', 'edd-export-tool' ), $file_path ) );
 			}
 
+			// if we are on page 2 or greater, we need to append to the existing data.
+			if ( $page > 1 ) {
+				$json = file_get_contents($file_path);
+				$existing_data = json_decode($json, true);
+				$data = array_merge($existing_data, $data);
+			}
+
 			$json = json_encode( $data, JSON_PRETTY_PRINT );
 			file_put_contents( $file_path, $json );
+
+			// memory cleanup
+			unset($data);
+			fclose($file);
 
 			return $file_path;
 		}
@@ -354,30 +454,36 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 * @since 1.0
 		 */
 		private function determine_file_path( $destination, $type = 'csv' ) {
-			return trailingslashit( $destination ) . 'edd-payments-from-' . $this->start->toDateString() . '-to-' . $this->end->toDateString() . '.' . $type;
+			if ( empty( $this->file_path ) ) {
+				$this->file_path = trailingslashit( $destination ) . 'edd-payments-from-' . $this->start->toDateString() . '-to-' . $this->end->toDateString() . '.' . $type;
+			}
+
+			return $this->file_path;
 		}
 
 		/**
 		 * Retrieve the file data is written to
 		 *
 		 * @param string $file_path The path to the file
+		 * @param int $page The page number
 		 *
 		 * @return false|resource file pointer resource on success, or false on error.
 		 * @since 1.0
 		 */
-		private function get_file( $file_path ) {
+		private function get_file( $file_path, $page = 1 ) {
 			$dir = dirname( $file_path );
 			if ( ! is_dir( $dir ) ) {
 				@mkdir( $dir, 0775, true ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 			}
 
 
-			if ( ! @file_exists( $file_path ) ) {
-				@file_put_contents( $file_path, '' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
-				@chmod( $file_path, 0664 ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			// make sure we start with a blank file on page 1.
+			if ( file_exists( $file_path ) && $page < 2 ) {
+				@unlink( $file_path );
 			}
 
-			return @fopen( $file_path, 'w' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+			// a+: Open for reading and writing; place the file pointer at the end of the file. If the file does not exist, attempt to create it.
+			return @fopen( $file_path, 'a+' ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
 		}
 
 		/**
