@@ -2,7 +2,7 @@
 /**
  * Plugin Name:     Edd Export Tool
  * Plugin URI:      https://github.com/jkudish/edd-export-tool
- * Description:     WP-CLI command that facilitates the extraction of payment data from Easy Digital Downloads (EDD) platform. The command provides the capability to export payment data from a specified time frame, enabling users to generate outputs in either CSV or JSON formats, and can output its data directly or to a specified file location. The tool offers customization options for selecting the data fields to be included in the output, along with various filtering mechanisms based on payment criteria.
+ * Description:     WP-CLI command that facilitates the extraction of payment data from Easy Digital Downloads (EDD) platform.
  * Author:          Joey Kudish
  * Author URI:      https://github.com/jkudish
  * Text Domain:     edd-export-tool
