@@ -23,17 +23,50 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 * [--destination=<destination>]
 		 * : Path to the destination directory for the resulting CSV or JSON file. Defaults to the wp-uploads/edd-exports folder.
 		 *
+		 * [--fields=<fields>]
+		 * : Array of fields to include in the export. Defaults to: customer_id, customer_email, payment_id, sequence_id, transaction_id, payment_date, payment_status, payment_amount, payment_gateway. Optional fields that you can include: customer_name, customer_phone, payment_notes, address1, address2, city, region, country, postal_code, phone
+		 *
+		 *  ## EXAMPLES
+		 *
+		 *      # Export default fields to a CLI table
+		 *      $ wp edd-export payments
+		 *
+		 *      # Customize fields to include in the export
+		 *      $ wp edd-export payments '--fields=["customer_id","customer_email","payment_id","customer_name","payment_notes"]'
+		 *
+		 *      # Export to CSV in the shell
+		 *      $ wp edd-export payments --output-format=csv
+		 *
+		 *      # Export to CSV file
+		 *      $ wp edd-export payments --output-format=csv-file
+		 *
+		 *      # Export to JSON file and specify custom destination
+		 *      $ wp edd-export payments --output-format=json-file --destination=/path/to/destination
+		 *
 		 * @param array $args Positional arguments.
 		 * @param array $assoc_args Associative arguments.
 		 */
 		public function payments( $args, $assoc_args ) {
 			$this->version_check();
-			$args = wp_parse_args( $assoc_args, array(
+
+			$assoc_args = WP_CLI\Utils\parse_shell_arrays( $assoc_args, array( 'fields' ) );
+			$args       = wp_parse_args( $assoc_args, array(
 				'output-format' => 'table',
 				'destination'   => wp_upload_dir()['basedir'] . '/edd-exports',
+				'fields'        => array(
+					'customer_id',
+					'customer_email',
+					'order_id',
+					'sequence_id',
+					'transaction_id',
+					'payment_date',
+					'payment_status',
+					'payment_amount',
+					'payment_gateway',
+				),
 			) );
 
-			$payments_data = $this->get_payments_data();
+			$payments_data = $this->get_payments_data( $args['fields'], $args['output-format'] );
 			if ( empty( $payments_data ) ) {
 				return WP_CLI::error( __( 'No EDD payments found.', 'edd-export-tool' ) );
 			}
@@ -64,11 +97,14 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		/**
 		 * Get the payments data.
 		 *
+		 * @param array $fields The fields to include in the export
+		 * @param string $output_format The output format
+		 *
 		 * @return array $data The data for the export
 		 * @since 1.0
 		 *
 		 */
-		private function get_payments_data() {
+		private function get_payments_data( $fields, $output_format ) {
 			$data = array();
 
 			$args = array(
@@ -81,7 +117,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 
 			foreach ( $orders as $order ) {
 				/** @var EDD\Orders\Order $order */
-				$data[] = $this->get_payment_data( $order );
+				$data[] = $this->get_payment_data( $order, $fields, $output_format );
 			}
 
 			$data = apply_filters( 'edd_export_tool_get_payments_data', $data );
@@ -94,22 +130,107 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 *
 		 * @param EDD\Orders\Order $order The order object
 		 *
+		 * @param array $fields The fields to include in the export
+		 * @param string $output_format The output format
+		 *
 		 * @return array $data The data for an individual payment
 		 * @since 1.0
 		 *
 		 */
-		private function get_payment_data( $order ) {
-			$payment_data = array(
-				'Customer ID'     => $order->customer_id,
-				'Customer Email'  => $order->email,
-				'Order ID'        => $order->id,
-				'Sequence ID'     => $order->get_number(),
-				'Transaction ID'  => $order->get_transaction_id(),
-				'Payment Date'    => $order->date_created,
-				'Payment Status'  => $order->status,
-				'Payment Amount'  => html_entity_decode( edd_format_amount( $order->total ) ),
-				'Payment Gateway' => edd_get_gateway_admin_label( $order->gateway ),
-			);
+		private function get_payment_data( $order, $fields, $output_format ) {
+			$payment_data = array();
+			$fields       = apply_filters( 'edd_export_tool_payment_fields', $fields );
+			$fields       = array_flip( $fields );
+			$customer     = edd_get_customer( $order->customer_id );
+
+
+			if ( isset( $fields['customer_id'] ) ) {
+				$payment_data['customer_id'] = $order->customer_id;
+			}
+
+			if ( isset( $fields['customer_email'] ) ) {
+				$payment_data['customer_email'] = $customer && isset( $customer->email ) ? $customer->email : '';
+			}
+
+			if ( isset( $fields['payment_id'] ) ) {
+				$payment_data['payment_id'] = $order->id;
+			}
+
+			if ( isset( $fields['sequence_id'] ) ) {
+				$payment_data['sequence_id'] = $order->get_number();
+			}
+
+			if ( isset( $fields['transaction_id'] ) ) {
+				$payment_data['transaction_id'] = $order->get_transaction_id();
+			}
+
+			if ( isset( $fields['payment_date'] ) ) {
+				$payment_data['payment_date'] = $order->date_created;
+			}
+
+			if ( isset( $fields['payment_status'] ) ) {
+				$payment_data['payment_status'] = $order->status;
+			}
+
+			if ( isset( $fields['payment_amount'] ) ) {
+				$payment_data['payment_amount'] = html_entity_decode( edd_format_amount( $order->total ) );
+			}
+
+			if ( isset( $fields['payment_gateway'] ) ) {
+				$payment_data['payment_gateway'] = edd_get_gateway_admin_label( $order->gateway );
+			}
+
+			if ( isset( $fields['customer_name'] ) ) {
+				$payment_data['customer_name'] = $customer && isset( $customer->name ) ? $customer->name : '';
+			}
+
+			if ( isset( $fields['address1'] ) || isset( $fields['address2'] ) || isset( $fields['city'] ) || isset( $fields['region'] ) || isset( $fields['country'] ) || isset( $fields['postal_code'] ) ) {
+				$address = $order->get_address();
+			}
+
+			if ( isset( $fields['address1'] ) ) {
+				$payment_data['address1'] = isset( $address->address ) ? $address->address : '';
+			}
+
+			if ( isset( $fields['address2'] ) ) {
+				$payment_data['address2'] = isset( $address->address2 ) ? $address->address2 : '';
+			}
+
+			if ( isset( $fields['city'] ) ) {
+				$payment_data['city'] = isset( $address->city ) ? $address->city : '';
+			}
+
+			if ( isset( $fields['region'] ) ) {
+				$payment_data['region'] = isset( $address->region ) ? $address->region : '';
+			}
+
+			if ( isset( $fields['country'] ) ) {
+				$payment_data['country'] = isset( $address->country ) ? $address->country : '';
+			}
+
+			if ( isset( $fields['postal_code'] ) ) {
+				$payment_data['postal_code'] = isset( $address->postal_code ) ? $address->postal_code : '';
+			}
+
+			if ( isset( $fields['payment_notes'] ) ) {
+				$notes = $order->get_notes();
+				if ( ! empty( $notes ) ) {
+					if ( in_array( $output_format, array( 'json', 'json-file' ) ) ) {
+						$payment_data['payment_notes'] = array();
+						foreach ( $notes as $note ) {
+							$payment_data['payment_notes'][] = $note->content;
+						}
+					} else {
+						$payment_data['payment_notes'] = '';
+						foreach ( $notes as $note ) {
+							if ( ! empty( $payment_data['payment_notes'] ) ) {
+								$payment_data['payment_notes'] .= " | ";
+							}
+							$payment_data['payment_notes'] .= $note->content;
+						}
+					}
+				}
+			}
 
 			$payment_data = apply_filters( 'edd_export_tool_get_payment_data', $payment_data );
 
