@@ -65,6 +65,9 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 * [--end=<date>]
 		 * : Export data before specified date/time. Defaults to now. Supersedes days argument.
 		 *
+		 * [--status=<status>]
+		 * : Filter by payment status
+		 *
 		 * [--minamount=<amount>]
 		 * : Filter by minimum purchase amount (total)
 		 *
@@ -82,8 +85,8 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 *      # Export to CSV in the shell and override number of days
 		 *      $ wp edd-export payments --output-format=csv --days=45
 		 *
-		 *      # Export to CSV file and override date range
-		 *      $ wp edd-export payments --output-format=csv-file --start="2023-11-01" --end="2023-11-27 17:00:00"
+		 *      # Export only failed orders between a certain date range to CSV file
+		 *      $ wp edd-export payments --output-format=csv-file --start="2023-11-01" --end="2023-11-27 17:00:00" --status=failed
 		 *
 		 *      # Export to JSON file and specify custom destination, and filter orders by min/max total amount ($20 min, $110 max)
 		 *      $ wp edd-export payments --output-format=json-file --destination=/path/to/destination --minamount=20 --maxamount=110
@@ -104,6 +107,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				'per_page'      => 1000,
 				'minamount'     => null,
 				'maxamount'     => null,
+				'status'        => null,
 				'max'           => in_array( $assoc_args['output-format'], array(
 					'table',
 					'csv',
@@ -236,22 +240,26 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				'number'  => $args['per_page'],
 			);
 
+			if (!empty($args['status'])) {
+				$query['status'] = $args['status'];
+			}
+
 			$query['date_query'] = $this->get_date_query( $args['days'], $args['start'], $args['end'] );
 
 			// there's no "total" query arg in the \EDD\Database\Queries\Order class, so we have to use a filter to apply a custom where clause
 			if ( is_numeric( $args['minamount'] ) ) {
-				add_filter( 'edd_orders_query_clauses', function ($clauses) use ($args) {
+				add_filter( 'edd_orders_query_clauses', function ( $clauses ) use ( $args ) {
 					global $wpdb;
-					$clauses['where'] .= ' ' .  $wpdb->prepare('AND total >= %s', $args['minamount']);
+					$clauses['where'] .= ' ' . $wpdb->prepare( 'AND total >= %s', $args['minamount'] );
 
 					return $clauses;
 				} );
 			}
 
 			if ( is_numeric( $args['maxamount'] ) ) {
-				add_filter( 'edd_orders_query_clauses', function ($clauses) use ($args) {
+				add_filter( 'edd_orders_query_clauses', function ( $clauses ) use ( $args ) {
 					global $wpdb;
-					$clauses['where'] .= ' ' .  $wpdb->prepare('AND total <= %s', $args['maxamount']);
+					$clauses['where'] .= ' ' . $wpdb->prepare( 'AND total <= %s', $args['maxamount'] );
 
 					return $clauses;
 				} );
