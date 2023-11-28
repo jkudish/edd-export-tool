@@ -80,6 +80,12 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 * [--emails=<emails>]
 		 * : Filter by an array of emails
 		 *
+		 * [--product_id=<product_id>]
+		 * : Filter by a specific product ID
+		 *
+		 * [--product_price_id=<product_price_id>]
+		 * : Filter by a specific product price ID
+		 *
 		 *  ## EXAMPLES
 		 *
 		 *      # Export default fields to a CLI table
@@ -105,23 +111,25 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 
 			$assoc_args = WP_CLI\Utils\parse_shell_arrays( $assoc_args, array( 'fields', 'customer_ids', 'emails' ) );
 			$args       = wp_parse_args( $assoc_args, array(
-				'output-format' => 'table',
-				'destination'   => wp_upload_dir()['basedir'] . '/edd-exports',
-				'days'          => 30,
-				'start'         => null,
-				'end'           => null,
-				'per_page'      => 1000,
-				'minamount'     => null,
-				'maxamount'     => null,
-				'status'        => null,
-				'customer_ids'  => [],
-				'emails'        => [],
-				'max'           => in_array( $assoc_args['output-format'], array(
+				'output-format'    => 'table',
+				'destination'      => wp_upload_dir()['basedir'] . '/edd-exports',
+				'days'             => 30,
+				'start'            => null,
+				'end'              => null,
+				'per_page'         => 1000,
+				'minamount'        => null,
+				'maxamount'        => null,
+				'status'           => null,
+				'customer_ids'     => [],
+				'emails'           => [],
+				'product_id'       => null,
+				'product_price_id' => null,
+				'max'              => in_array( $assoc_args['output-format'], array(
 					'table',
 					'csv',
 					'json'
 				) ) ? 100 : null,
-				'fields'        => array(
+				'fields'           => array(
 					'customer_id',
 					'customer_email',
 					'order_id',
@@ -260,7 +268,18 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				$query['email__in'] = $args['emails'];
 			}
 
-			$query['date_query'] = $this->get_date_query( $args['days'], $args['start'], $args['end'] );
+			if ( ! empty( $args['product_id'] ) ) {
+				$query['product_id'] = $args['product_id'];
+			}
+
+			if ( ! empty( $args['product_price_id'] ) ) {
+				$query['product_price_id'] = $args['product_price_id'];
+			}
+
+			// when using `date_query` in combination with `product_id`, it produces an invalid query error "WordPress database error Column 'date_created' in where clause is ambiguous for query" because the `date_query` is not properly scoped to the `edd_orders` table. This bug has been reported here: https://github.com/awesomemotive/easy-digital-downloads/issues/9699
+			// For now, we'll use date_created_query but this is a bug that should be fixed in EDD core - and then we should use `date_query` here instead.
+//			$query['date_query'] = $this->get_date_query( $args['days'], $args['start'], $args['end'] );
+			$query['date_created_query'] = $this->get_date_query( $args['days'], $args['start'], $args['end'] );
 
 			// there's no "total" query arg in the \EDD\Database\Queries\Order class, so we have to use a filter to apply a custom where clause
 			if ( is_numeric( $args['minamount'] ) ) {
