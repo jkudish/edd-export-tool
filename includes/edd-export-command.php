@@ -74,16 +74,22 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 * [--maxamount=<amount>]
 		 * : Filter by maximum purchase amount (total)
 		 *
+		 * [--customer_ids=<customer_ids>]
+		 * : Filter by an array of customer IDs
+		 *
+		 * [--emails=<emails>]
+		 * : Filter by an array of emails
+		 *
 		 *  ## EXAMPLES
 		 *
 		 *      # Export default fields to a CLI table
 		 *      $ wp edd-export payments
 		 *
-		 *      # Customize fields to include in the export
-		 *      $ wp edd-export payments '--fields=["customer_id","customer_email","payment_id","customer_name","payment_notes"]'
+		 *      # Customize fields to include in the export and filter by customer IDs
+		 *      $ wp edd-export payments '--fields=["customer_id","customer_email","payment_id","customer_name","payment_notes"]' '--customer_ids=[1,2]'
 		 *
-		 *      # Export to CSV in the shell and override number of days
-		 *      $ wp edd-export payments --output-format=csv --days=45
+		 *      # Export specific customer's (by e-mail) orders to CSV in the shell and override number of days to include
+		 *      $ wp edd-export payments --output-format=csv --days=45 '--emails=["joey@test.com"]
 		 *
 		 *      # Export only failed orders between a certain date range to CSV file
 		 *      $ wp edd-export payments --output-format=csv-file --start="2023-11-01" --end="2023-11-27 17:00:00" --status=failed
@@ -97,7 +103,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		public function payments( $args, $assoc_args ) {
 			$this->version_check();
 
-			$assoc_args = WP_CLI\Utils\parse_shell_arrays( $assoc_args, array( 'fields' ) );
+			$assoc_args = WP_CLI\Utils\parse_shell_arrays( $assoc_args, array( 'fields', 'customer_ids', 'emails' ) );
 			$args       = wp_parse_args( $assoc_args, array(
 				'output-format' => 'table',
 				'destination'   => wp_upload_dir()['basedir'] . '/edd-exports',
@@ -108,6 +114,8 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				'minamount'     => null,
 				'maxamount'     => null,
 				'status'        => null,
+				'customer_ids'  => [],
+				'emails'        => [],
 				'max'           => in_array( $assoc_args['output-format'], array(
 					'table',
 					'csv',
@@ -240,8 +248,16 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				'number'  => $args['per_page'],
 			);
 
-			if (!empty($args['status'])) {
+			if ( ! empty( $args['status'] ) ) {
 				$query['status'] = $args['status'];
+			}
+
+			if ( ! empty( $args['customer_ids'] ) ) {
+				$query['customer_id__in'] = $args['customer_ids'];
+			}
+
+			if ( ! empty( $args['emails'] ) ) {
+				$query['email__in'] = $args['emails'];
 			}
 
 			$query['date_query'] = $this->get_date_query( $args['days'], $args['start'], $args['end'] );
