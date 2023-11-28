@@ -51,7 +51,7 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 * : Max number of orders to retrieve. Use this to control the total number of orders exported. This has a default value of 100 when using the shell output formats. Otherwise, no default value is applied
 		 *
 		 * [--destination=<destination>]
-		 * : Path to the destination directory for the resulting CSV or JSON file. Defaults to the wp-uploads/edd-exports folder.
+		 * : Path to the destination directory for the resulting CSV or JSON file. Defaults to the `wp-uploads/edd-exports` folder which will be created if it doesn't exist.
 		 *
 		 * [--fields=<fields>]
 		 * : Array of fields to include in the export. Defaults to: customer_id, customer_email, payment_id, sequence_id, transaction_id, payment_date, payment_status, payment_amount, payment_gateway. Optional fields that you can include: customer_name, customer_phone, payment_notes, address1, address2, city, region, country, postal_code, phone
@@ -100,8 +100,8 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 *      # Export only failed orders between a certain date range to CSV file
 		 *      $ wp edd-export payments --output-format=csv-file --start="2023-11-01" --end="2023-11-27 17:00:00" --status=failed
 		 *
-		 *      # Export to JSON file and specify custom destination, and filter orders by min/max total amount ($20 min, $110 max)
-		 *      $ wp edd-export payments --output-format=json-file --destination=/path/to/destination --minamount=20 --maxamount=110
+		 *      # Export specific product sales to JSON file and specify custom destination, and filter orders by min/max total amount ($20 min, $110 max)
+		 *      $ wp edd-export payments --output-format=json-file --destination=/path/to/destination --minamount=20 --maxamount=110 --product_id=123
 		 *
 		 * @param array $args Positional arguments.
 		 * @param array $assoc_args Associative arguments.
