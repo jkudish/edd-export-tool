@@ -65,6 +65,12 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 * [--end=<date>]
 		 * : Export data before specified date/time. Defaults to now. Supersedes days argument.
 		 *
+		 * [--minamount=<amount>]
+		 * : Filter by minimum purchase amount (total)
+		 *
+		 * [--maxamount=<amount>]
+		 * : Filter by maximum purchase amount (total)
+		 *
 		 *  ## EXAMPLES
 		 *
 		 *      # Export default fields to a CLI table
@@ -79,8 +85,8 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 		 *      # Export to CSV file and override date range
 		 *      $ wp edd-export payments --output-format=csv-file --start="2023-11-01" --end="2023-11-27 17:00:00"
 		 *
-		 *      # Export to JSON file and specify custom destination
-		 *      $ wp edd-export payments --output-format=json-file --destination=/path/to/destination
+		 *      # Export to JSON file and specify custom destination, and filter orders by min/max total amount ($20 min, $110 max)
+		 *      $ wp edd-export payments --output-format=json-file --destination=/path/to/destination --minamount=20 --maxamount=110
 		 *
 		 * @param array $args Positional arguments.
 		 * @param array $assoc_args Associative arguments.
@@ -96,6 +102,8 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 				'start'         => null,
 				'end'           => null,
 				'per_page'      => 1000,
+				'minamount'     => null,
+				'maxamount'     => null,
 				'max'           => in_array( $assoc_args['output-format'], array(
 					'table',
 					'csv',
@@ -229,6 +237,25 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			);
 
 			$query['date_query'] = $this->get_date_query( $args['days'], $args['start'], $args['end'] );
+
+			// there's no "total" query arg in the \EDD\Database\Queries\Order class, so we have to use a filter to apply a custom where clause
+			if ( is_numeric( $args['minamount'] ) ) {
+				add_filter( 'edd_orders_query_clauses', function ($clauses) use ($args) {
+					global $wpdb;
+					$clauses['where'] .= ' ' .  $wpdb->prepare('AND total >= %s', $args['minamount']);
+
+					return $clauses;
+				} );
+			}
+
+			if ( is_numeric( $args['maxamount'] ) ) {
+				add_filter( 'edd_orders_query_clauses', function ($clauses) use ($args) {
+					global $wpdb;
+					$clauses['where'] .= ' ' .  $wpdb->prepare('AND total <= %s', $args['maxamount']);
+
+					return $clauses;
+				} );
+			}
 
 			return $query;
 		}
@@ -404,8 +431,8 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 			}
 
 			// memory cleanup
-			unset($data);
-			fclose($file);
+			unset( $data );
+			fclose( $file );
 
 			return $file_path;
 		}
@@ -429,17 +456,17 @@ if ( defined( 'WP_CLI' ) && WP_CLI ) {
 
 			// if we are on page 2 or greater, we need to append to the existing data.
 			if ( $page > 1 ) {
-				$json = file_get_contents($file_path);
-				$existing_data = json_decode($json, true);
-				$data = array_merge($existing_data, $data);
+				$json          = file_get_contents( $file_path );
+				$existing_data = json_decode( $json, true );
+				$data          = array_merge( $existing_data, $data );
 			}
 
 			$json = json_encode( $data, JSON_PRETTY_PRINT );
 			file_put_contents( $file_path, $json );
 
 			// memory cleanup
-			unset($data);
-			fclose($file);
+			unset( $data );
+			fclose( $file );
 
 			return $file_path;
 		}
